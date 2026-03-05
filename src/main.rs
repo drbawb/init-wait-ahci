@@ -1,4 +1,6 @@
-use std::fs;
+#![feature(iterator_try_collect)]
+
+use std::{fs, io};
 use std::sync::{Arc, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -9,11 +11,25 @@ const PCI_DEV_BID: &'static str = "0000:67:00.0";
 const PCI_DEV_VID: &'static str = "0x1b21";
 const PCI_DEV_DID: &'static str = "0x1164";
 
+#[derive(Debug)]
 struct TaskRegister {
     devices_found: i8,
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
+enum CmdErr {
+    Io(io::Error),
+    Logic(String),
+}
 
+impl From<io::Error> for CmdErr {
+    fn from(err: io::Error) -> CmdErr { CmdErr::Io(err) }
+}
+
+impl From<&str> for CmdErr {
+    fn from(err: &str) -> CmdErr { CmdErr::Logic(err.into()) }
+}
 
 fn main() {
     let dev_path = format!("{PCI_BUS_PATH}/{PCI_DEV_BID}");
@@ -22,6 +38,7 @@ fn main() {
 
     let pci_probe_time = Instant::now();
 
+    // probe for the AHCI controller on the other side of the TBT3 tunnel ...
     'probe: loop {
         let vendor_str = fs::read_to_string(format!("{dev_path}/vendor")).unwrap_or("0x0000".to_string());
         let device_str = fs::read_to_string(format!("{dev_path}/device")).unwrap_or("0x0000".to_string());
@@ -49,6 +66,8 @@ fn main() {
         break 'probe; // we found the device we are looking for ...
     }
 
+    // since it is an AHCI controller we expect it to have one or more ataN
+    // devices in its device-tree, collect them for later discovery ...
     println!("found ASMedia controller, enumerating ATA paths ...");
     
     let dir_tree = fs::read_dir(format!("{dev_path}")).inspect_err(|e| {
@@ -56,21 +75,34 @@ fn main() {
         std::process::exit(0x10);
     }).unwrap();
 
-    let paths = enumerate_ata_paths(dir_tree);
+    let paths = enumerate_ata_paths(dir_tree).inspect_err(|err| {
+        eprintln!("io error enumerating ata* paths: {err:?}");
+        std::process::exit(0x10);
+    }).unwrap();
+
     println!("discovered {} paths", paths.len());
 
+    // kick off some threads which monitor each ata device independently
+    let mut any_error = false;
+    let mut handles = Vec::with_capacity(paths.len());
     let start_time = Instant::now();
     let thread_state = Arc::new(RwLock::new(TaskRegister { devices_found: 0 }));
-    let mut handles = Vec::with_capacity(paths.len());
-
 
     for path in paths {
         handles.push(wait_for_ata_dev(start_time, path, thread_state.clone()));
     }
 
-    for handle in handles { handle.join().expect("thread panicked"); }
+    for handle in handles { 
+        if let Err(e) = handle.join().expect("thread panicked") {
+            any_error = true; eprintln!("thread encountered an error: {e:?}");
+        }
+    }
 
+    if any_error { std::process::exit(0x10); }
+
+    // check the results from our workers if there were no unexpected errors ...
     let task_regs = thread_state.read().expect("could not lock task register state");
+
     if task_regs.devices_found != 4 {
         eprintln!("found [{}] devices expected [4]", task_regs.devices_found);
         std::process::exit(0x01);
@@ -80,11 +112,11 @@ fn main() {
     std::process::exit(0x00);
 }
 
-fn wait_for_ata_dev(started_at: Instant, path: String, regs: Arc<RwLock<TaskRegister>>) -> JoinHandle<()> {
+fn wait_for_ata_dev(started_at: Instant, path: String, regs: Arc<RwLock<TaskRegister>>) -> JoinHandle<Result<(), CmdErr>> {
     thread::spawn(move || {
         let ata_no: i8 = path
-            .strip_prefix("ata").expect("started thread with non ata* path?")
-            .parse().expect("ata* path does not end with integer?");
+            .strip_prefix("ata").ok_or(CmdErr::from("started thread with non ata* path?"))?
+            .parse().map_err(|_| CmdErr::from("ata* path does not end with integer?"))?;
 
         let scsi_no = ata_no - 1;
         let host_path = format!("{PCI_BUS_PATH}/{PCI_DEV_BID}/ata{ata_no}/host{scsi_no}/target{scsi_no}:0:0/{scsi_no}:0:0:0");
@@ -96,10 +128,10 @@ fn wait_for_ata_dev(started_at: Instant, path: String, regs: Arc<RwLock<TaskRegi
                 break 'task; // exit early on timeout ...
             }
 
-            let mut task_reg = regs.write().expect("failed to lock task register");
+            let mut task_reg = regs.write().map_err(|_| CmdErr::from("failed to lock task register"))?;
             if task_reg.devices_found >= 4 { break 'task } // exit early if other threads beat us ...
 
-            if fs::exists(host_path.as_str()).expect("i/o error reading host path") {
+            if fs::exists(host_path.as_str()).map_err(|_| CmdErr::from("i/o error reading host path"))? {
                 let elapsed_ms = started_at.elapsed().as_millis();
                 task_reg.devices_found += 1;
                 println!("found device at [{host_path}] in {elapsed_ms}ms");
@@ -109,15 +141,17 @@ fn wait_for_ata_dev(started_at: Instant, path: String, regs: Arc<RwLock<TaskRegi
             drop(task_reg); // lock is otherwise held for scope of loop
             thread::sleep(Duration::from_millis(100));
         }
+
+        return Ok(()); // exit successfully ...
     })
 }
 
-fn enumerate_ata_paths(dir_tree: fs::ReadDir) -> Vec<String> {
+fn enumerate_ata_paths(dir_tree: fs::ReadDir) -> Result<Vec<String>, CmdErr> {
     let mut paths = Vec::with_capacity(24); // assumed that this controller has 24 ports
 
     for ent in dir_tree {
-        let ent = ent.expect("i/o error reading PCI device directory tree");
-        let info = ent.file_type().expect("i/o error reading PCI device file entry");
+        let ent = ent?; // assume we are able to read this dnode
+        let info = ent.file_type()?;
 
         if !info.is_dir() { continue; } // looking only for ata* directories
 
@@ -127,5 +161,5 @@ fn enumerate_ata_paths(dir_tree: fs::ReadDir) -> Vec<String> {
         paths.push(path_name); // found an ATA path
     }
 
-    return paths;
+    return Ok(paths);
 }

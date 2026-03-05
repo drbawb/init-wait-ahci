@@ -20,17 +20,33 @@ fn main() {
     let dev_id = format!("{PCI_DEV_VID}:{PCI_DEV_DID}");
     println!("looking for ASMedia controller {dev_id} at {dev_path}");
 
-    let vendor_str = fs::read_to_string(format!("{dev_path}/vendor")).unwrap_or("0x0000".to_string());
-    let device_str = fs::read_to_string(format!("{dev_path}/device")).unwrap_or("0x0000".to_string());
+    let pci_probe_time = Instant::now();
 
-    if vendor_str.trim_end() != PCI_DEV_VID {
-        eprintln!("vendor ID {vendor_str} did not match expected {PCI_DEV_VID}");
-        std::process::exit(0x01);
-    }
-    
-    if device_str.trim_end() != PCI_DEV_DID {
-        eprintln!("device ID {device_str} did not match expected {PCI_DEV_DID}");
-        std::process::exit(0x01);
+    'probe: loop {
+        let vendor_str = fs::read_to_string(format!("{dev_path}/vendor")).unwrap_or("0x0000".to_string());
+        let device_str = fs::read_to_string(format!("{dev_path}/device")).unwrap_or("0x0000".to_string());
+
+        if vendor_str == "0x0000" && device_str == "0x0000" {
+            if pci_probe_time.elapsed() > Duration::from_secs(10) {
+                eprintln!("timeout elapsed ... giving up on probing");
+                std::process::exit(0x01);
+            }
+
+            thread::sleep(Duration::from_millis(100));
+            continue 'probe;
+        }
+
+        if vendor_str.trim_end() != PCI_DEV_VID {
+            eprintln!("vendor ID {vendor_str} did not match expected {PCI_DEV_VID}");
+            std::process::exit(0x01);
+        }
+        
+        if device_str.trim_end() != PCI_DEV_DID {
+            eprintln!("device ID {device_str} did not match expected {PCI_DEV_DID}");
+            std::process::exit(0x01);
+        }
+
+        break 'probe; // we found the device we are looking for ...
     }
 
     println!("found ASMedia controller, enumerating ATA paths ...");

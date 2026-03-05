@@ -1,6 +1,6 @@
 #![feature(iterator_try_collect)]
 
-use std::{fs, io};
+use std::{fmt, fs, io};
 use std::sync::{Arc, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -16,12 +16,13 @@ struct TaskRegister {
     devices_found: i8,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum CmdErr {
     Io(io::Error),
     Logic(String),
 }
+
+impl std::error::Error for CmdErr {}
 
 impl From<io::Error> for CmdErr {
     fn from(err: io::Error) -> CmdErr { CmdErr::Io(err) }
@@ -29,6 +30,15 @@ impl From<io::Error> for CmdErr {
 
 impl From<&str> for CmdErr {
     fn from(err: &str) -> CmdErr { CmdErr::Logic(err.into()) }
+}
+
+impl fmt::Display for CmdErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), fmt::Error> {
+        Ok(match self {
+            Self::Io(err) => write!(f, "i/o error: {err:?}")?,
+            Self::Logic(err) => write!(f, "program error: {err:?}")?,
+        })
+    }
 }
 
 fn main() {

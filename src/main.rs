@@ -118,12 +118,18 @@ fn main() {
     // check the results from our workers if there were no unexpected errors ...
     let task_regs = thread_state.lock().expect("could not lock task register state");
 
-    if task_regs.devices_found != WAIT_NUM_DEVICES {
-        eprintln!("found [{}] devices expected [{WAIT_NUM_DEVICES}]", task_regs.devices_found);
+    if task_regs.devices_found <= 0 {
+        eprintln!("No devices found D: - is the JBOD cabling OK?");
         std::process::exit(0x01);
     }
 
-    println!("all devices found :D");
+    if task_regs.devices_found != WAIT_NUM_DEVICES {
+        eprintln!("warning: found [{}] devices, but expected [{WAIT_NUM_DEVICES}]", task_regs.devices_found);
+        eprintln!("exiting w/ success, but some volumes may be degraded or unavailable ...");
+        std::process::exit(0x00);
+    }
+
+    println!("all [{}] devices were found :D", task_regs.devices_found);
     std::process::exit(0x00);
 }
 

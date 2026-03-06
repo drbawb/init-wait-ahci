@@ -43,7 +43,7 @@ and reinitailizes itself your system will be horrendously slow and unstable if
 anything tries to touch those block devices. (Like, idk, a unit in your system
 bringup like `zpool-import-cache.service`.)
 
-# IMPORTANT DISCLAIMER
+## ⚠️IMPORTANT DISCLAIMER ⚠️
 
 If you are actually going to try and use this **THERE ARE HARDCODED PCI BUS
 IDS, DEVICE IDS, AND VENDOR IDS.**
@@ -84,7 +84,20 @@ Basically what I did is this:
    importing my root zpool. If you don't have zfs-on-root this is maybe less
    important to you.
 
-## Do you recommend anybody use this?
+The rust program `init-wait-ahci` is pretty straightforward:
+
+1. It waits for the AHCI controller to show up (or not...)
+
+2. It discovers the downstream `/ata*` device nodes
+
+3. Some worker threads wait for those to have valid SCSI targets, at which
+   point I just kind of assume they are bound to block device nodes.
+
+4. As soon as we find four SCSI targets (the max the enclosure supports) we
+   bail out. - This should in theory allow this to work if you swapped this out
+   with a JBOD that supports more disks like their 8-bay model.
+
+### Do you recommend anybody use this?
 
 Fuck. No.
 
@@ -116,3 +129,55 @@ drives. Thankfully this is a "server" that will boot "rarely" ...
 Please. I'm begging you. Get a real computer with a PCIe slot, or a built-in
 storage controller. Do not attach storage you need during system bringup via
 TBT3.
+
+### Appendix A: PCIe Toplogy
+
+This is the PCIe topology I'm working with, just so you can somewhat visualize
+what the hell this script does:
+
+```
+$ lspci -tv
+
+...snip...
+
++-04.0  Advanced Micro Devices, Inc. [AMD] Phoenix Dummy Host Bridge
++-04.1-[65-c4]----00.0-[66-c4]--+-01.0-[67]----00.0  ASMedia Technology Inc. ASM1164 Serial ATA AHCI Controller
+|                               +-02.0-[68]----00.0  Intel Corporation JHL7440 Thunderbolt 3 USB Controller [Titan Ridge DD 2018]
+|                               \-04.0-[69-c4]--
+
+...snip...
+
+$ lspci
+
+00:04.1 PCI bridge: Advanced Micro Devices, Inc. [AMD] Family 19h USB4/Thunderbolt PCIe tunnel
+...snip...
+65:00.0 PCI bridge: Intel Corporation JHL7440 Thunderbolt 3 Bridge [Titan Ridge DD 2018] (rev 06)
+66:01.0 PCI bridge: Intel Corporation JHL7440 Thunderbolt 3 Bridge [Titan Ridge DD 2018] (rev 06)
+66:02.0 PCI bridge: Intel Corporation JHL7440 Thunderbolt 3 Bridge [Titan Ridge DD 2018] (rev 06)
+66:04.0 PCI bridge: Intel Corporation JHL7440 Thunderbolt 3 Bridge [Titan Ridge DD 2018] (rev 06)
+67:00.0 SATA controller: ASMedia Technology Inc. ASM1164 Serial ATA AHCI Controller (rev 02)
+68:00.0 USB controller: Intel Corporation JHL7440 Thunderbolt 3 USB Controller [Titan Ridge DD 2018] (rev 06)
+..snip..
+```
+
+Not 100% positive, since I haven't used it, and probably can't reliably use it
+with this absolute hackjob of an initrd, but I believe 69:00 is the daisy
+chained Thunderbolt 3 port on the back of the disk enclosure.
+
+I am wacking `65:00.0` just because it's kind of one step removed from whatever
+you call my host interface (NHI) so that makes it easier to revive later. If I
+wack `00:04.1` it seems like the only way to get stuff back is with judicious
+pokes of `/sys/bus/pci/.../rescan` nodes, but if I wack the Intel TBT3 bridge
+chip instead it seems to just kind of come back by itself after a `modprobe -i
+thunderbolt` and everything "just works" after that.
+
+Your mileage and PCIe topology may vary.
+
+This *also* seems to be the "gentlest" on the enclosure; it seems like removing
+the bridge makes it think the host is gone or maybe has gone to sleep, and so
+it does what appears to be a more graceful reset. (It individually spins down
+each disk.)
+
+If I remove the AMD dummy host bridge it just kinda dies... and I would
+probably want some random sleeps etc. to make sure it's fully shutdown. Screw
+that.

@@ -1,0 +1,10 @@
+[Unit]
+Description=[himecorp] sekai is a fuck
+DefaultDependencies=no
+Before=initrd-root-fs.target
+After=systemd-udevd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/rm-tb-pci
+RemainAfterExit=yes

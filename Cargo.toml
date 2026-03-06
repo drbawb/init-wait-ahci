@@ -3,4 +3,7 @@ name = "init-wait-ahci"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+debug=1
+
 [dependencies]

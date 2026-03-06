@@ -21,7 +21,6 @@ run_hook() {
 		echo 1 > "${bridge_path}/remove"
 	fi
 
-	sleep 1
 	echo "[himecorp] SEE YA!"
 }
 

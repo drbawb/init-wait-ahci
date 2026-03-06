@@ -43,6 +43,15 @@ and reinitailizes itself your system will be horrendously slow and unstable if
 anything tries to touch those block devices. (Like, idk, a unit in your system
 bringup like `zpool-import-cache.service`.)
 
+# IMPORTANT DISCLAIMER
+
+If you are actually going to try and use this **THERE ARE HARDCODED PCI BUS
+IDS, DEVICE IDS, AND VENDOR IDS.**
+
+You *absolutely* must change at least `src/main.rs` and `dist/hooks/rm-tb-pci`
+this *WILL NOT WORK* on your system as-is unless you happened to buy the same
+exact hardware as me, which I somehow doubt.
+
 ## How did you fix it?
 
 I expended idk something like 12 hours of my life to bring you ...

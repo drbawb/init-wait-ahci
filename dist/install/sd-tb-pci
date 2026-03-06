@@ -1,0 +1,22 @@
+#!/bin/bash
+
+build() {
+	add_file \
+		"/etc/initcpio/units/rm-tb.service" \
+		"/usr/lib/systemd/system/rm-tb.service"
+
+	add_binary \
+		"/etc/initcpio/hooks/rm-tb-pci" \
+		"/usr/bin/rm-tb-pci"
+
+	add_symlink \
+		"/usr/lib/systemd/system/initrd.target.wants/rm-tb.service" \
+		"/usr/lib/systemd/system/rm-tb.service"
+}
+
+help() {
+    cat <<HELPEOF
+Removes the Thunderbolt PCIe bridge subtree (bus 65) before udev runs,
+preventing the thunderbolt driver from resetting an active TB tunnel.
+HELPEOF
+}

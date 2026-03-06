@@ -1,0 +1,28 @@
+#!/usr/bin/ash
+
+run_hook() {
+	local bridge="0000:65:00.0"
+	local bridge_path="/sys/bus/pci/devices/${bridge}"
+	local evid="0x8086"
+	local edid="0x15ef"
+
+	echo "[himecorp] sekai is a fuck ... "
+
+	[[ -f "${bridge_path}/remove" ]] || return 0
+	echo "[himecorp] found device at ${bridge}"
+
+	local vendor device
+	vendor=$(cat "${bridge_path}/vendor" 2>/dev/null) || return 0
+	device=$(cat "${bridge_path}/device" 2>/dev/null) || return 0
+
+	if [[ "$vendor" == "$evid" && "$device" == "$edid" ]]; then
+		echo "[himecorp] ${bridge} matches ${evid}:${edid} ..."
+		echo "[himecorp] attempting removal of early pcie tree"
+		echo 1 > "${bridge_path}/remove"
+	fi
+
+	sleep 1
+	echo "[himecorp] SEE YA!"
+}
+
+run_hook

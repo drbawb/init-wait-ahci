@@ -1,0 +1,16 @@
+[Unit]
+Description=Load TBT3 module and wait for the JBOD
+DefaultDependencies=no
+Before=bolt.service
+Wants=bolt.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/modprobe -i thunderbolt
+ExecStart=/usr/bin/udevadm trigger --subsystem-match=thunderbolt
+ExecStart=/usr/bin/udevadm settle
+ExecStart=/usr/local/bin/init-wait-ahci
+RemainAfterExit=yes
+
+[Install]
+WantedBy=local-fs-pre.target

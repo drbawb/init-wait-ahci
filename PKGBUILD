@@ -1,5 +1,5 @@
 pkgname=late-thunderbolt
-pkgver=0.1.1
+pkgver=0.1.3
 pkgrel=1
 pkgdesc="Load thunderbolt JIT for ZFS pools on a TBT3 JBOD"
 arch=('x86_64')

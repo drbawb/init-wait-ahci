@@ -52,6 +52,17 @@ You *absolutely* must change at least `src/main.rs` and `dist/hooks/rm-tb-pci`
 this *WILL NOT WORK* on your system as-is unless you happened to buy the same
 exact hardware as me, which I somehow doubt.
 
+There is also a file in `dist/udev/` which authorizes Thunderbolt devices
+*indiscrimately.* You will need *something* like this, because bringing in
+`bolt.service` before `local-fs-pre.target` seems impossible. (If you know how
+to make that work, let me know, or maybe don't ... I didn't ask for this, I
+never wanted to know how any of this works. Ignorance was bliss!)
+
+The udev rule is *NOT* automatically installed by anything because it's a
+"security risk" or whatever ... feel free to use it if you want to accept that
+risk. (It goes in `/etc/udev.d/rules.d`). Probably the best thing would be to
+modify the rule to target your specific device.
+
 ## How did you fix it?
 
 I expended idk something like 12 hours of my life to bring you ...
